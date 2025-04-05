@@ -49,6 +49,17 @@ contract HealthRecords is Ownable, ReentrancyGuard {
     event RecordAccessed(address indexed patient, address indexed accessor, string recordId, uint256 timestamp);
     
     // Modifiers
+    modifier checkAuthorized(address patient) {
+        require(
+            msg.sender == patient || 
+            (accessRequests[patient][msg.sender].approved && 
+             accessRequests[patient][msg.sender].expiryTime >= block.timestamp),
+            "Not authorized to access this record"
+        );
+        _;
+    }
+    
+    // Modifier that checks and logs access (for non-view functions)
     modifier onlyAuthorized(address patient, string memory recordId) {
         require(
             msg.sender == patient || 
@@ -131,7 +142,7 @@ contract HealthRecords is Ownable, ReentrancyGuard {
     function getRecord(address patient, string memory recordId) 
         external 
         view 
-        onlyAuthorized(patient, recordId) 
+        checkAuthorized(patient)
         returns (Record memory) 
     {
         require(patientRecords[patient][recordId].exists, "Record does not exist");
@@ -146,10 +157,32 @@ contract HealthRecords is Ownable, ReentrancyGuard {
     function getRecordIds(address patient) 
         external 
         view 
-        onlyAuthorized(patient, "all") 
+        checkAuthorized(patient)
         returns (string[] memory) 
     {
         return patientRecordIds[patient];
+    }
+    
+    /**
+     * @dev Log access for view functions (must be called separately)
+     * @param patient The patient's address
+     * @param recordId Unique identifier for the record
+     */
+    function logAccess(address patient, string memory recordId) external {
+        require(
+            msg.sender != patient && 
+            accessRequests[patient][msg.sender].approved && 
+            accessRequests[patient][msg.sender].expiryTime >= block.timestamp,
+            "Not authorized to log access"
+        );
+        
+        accessLogs[patient].push(AccessLog({
+            accessor: msg.sender,
+            accessTime: block.timestamp,
+            recordId: recordId
+        }));
+        
+        emit RecordAccessed(patient, msg.sender, recordId, block.timestamp);
     }
     
     /**
